@@ -1,0 +1,11 @@
+{
+  "name": "splitstream",
+  "version": "0.1.0",
+  "main": "./streaming.js",
+  "scripts": {
+    "test": "NODE_ENV=test jest"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
+  }
+}
