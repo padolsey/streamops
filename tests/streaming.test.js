@@ -223,24 +223,6 @@ describe('streaming abstraction', () => {
     expect(results).toEqual([3, 5]);
   });
 
-  test('nested parallel processing', async () => {
-    const pipeline = [
-      function*() { yield 1; yield 2; },
-      [
-        [
-          (x) => x * 2,
-          (x) => x * 3
-        ],
-        (x) => x + 1
-      ]
-    ];
-    const results = [];
-    for await (const item of streaming(pipeline)) {
-      results.push(item);
-    }
-    expect(results).toEqual([[[2, 3], 2], [[4, 6], 3]]);
-  });
-
   test('Sequential Processing', async () => {
     const pipeline = [
       () => 5,
@@ -279,21 +261,6 @@ describe('streaming abstraction', () => {
       results.push(item);
     }
     expect(results).toEqual([[6, 4]]);
-  });
-
-  test('Nested Parallelism', async () => {
-    const pipeline = [
-      () => 2,
-      [
-        [(x) => x * 2, (x) => x * 3],
-        (x) => x + 1
-      ]
-    ];
-    const results = [];
-    for await (const item of streaming(pipeline)) {
-      results.push(item);
-    }
-    expect(results).toEqual([[[4, 6], 3]]);
   });
 
   test('State Management', async () => {

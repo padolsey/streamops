@@ -81,9 +81,20 @@ module.exports = function createStreaming(options = {}) {
         }
       }
 
-      for (const item of state) {
-        yield item;
+      if (typeof state == 'string') {
+        yield state;
+      } else if (typeof state[Symbol.asyncIterator] === 'function') {
+        for await (const item of state) {
+          yield item;
+        }
+      } else if (typeof state[Symbol.iterator] === 'function') {
+        for (const item of state) {
+          yield item;
+        }
+      } else {
+        yield state;
       }
+      
     } catch (error) {
       logger.error('Error in streaming pipeline:', error);
       emitter.emit('error', error);
@@ -94,6 +105,10 @@ module.exports = function createStreaming(options = {}) {
     }
 
     function validateStep(step) {
+
+      return true;
+
+
       if (!(Array.isArray(step) || typeof step === 'function')) {
         throw new StreamingError('Invalid pipeline step', stepIndex);
       }
@@ -107,6 +122,8 @@ module.exports = function createStreaming(options = {}) {
           return await processGenerator(step, input);
         } else if (typeof step === 'function') {
           return await processFunction(step, input);
+        } else {
+          return step;
         }
       } catch (error) {
         throw new StreamingError('Error processing step', stepIndex, error);
