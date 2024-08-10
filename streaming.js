@@ -35,7 +35,7 @@ module.exports = function createStreaming(options = {}) {
   const config = { ...defaultOptions, ...options };
   const logger = createLogger(config);
 
-  return async function* streaming(pipeline) {
+  async function* streaming(pipeline) {
     const context = {};
     const emitter = new EventEmitter();
 
@@ -47,13 +47,90 @@ module.exports = function createStreaming(options = {}) {
     let state = context.state = [undefined];
     let stepIndex = 0;
 
+    function validateStep(step) {
+      return true;
+    }
+
+    async function processStep(step, input) {
+      try {
+        if (Array.isArray(step)) {
+          return await processParallel(step, input);
+        } else if (isGenerator(step)) {
+          return await processGenerator(step, input);
+        } else if (typeof step === 'function') {
+          return await processFunction(step, input);
+        } else if (isComplexIterable(step)) {
+          return await processGenerator(async function*() {
+            yield* await (step[Symbol.iterator] || step[Symbol.asyncIterator])
+              ? step
+              : [step]
+          }, input);
+        } else {
+          return step;
+        }
+      } catch (error) {
+        throw new StreamingError('Error processing step', stepIndex, error);
+      }
+    }
+
+    function isComplexIterable(obj) {
+      return obj != null && 
+        (
+          typeof obj[Symbol.iterator] === 'function' ||
+          typeof obj[Symbol.asyncIterator] === 'function'
+        ) &&
+          typeof obj !== 'string' &&
+          typeof obj !== 'number' &&
+          typeof obj !== 'boolean' &&
+          typeof obj !== 'symbol';
+    }
+
+    async function processParallel(steps, input) {
+      return await Promise.all(input.map(async item => {
+        const results = await Promise.all(steps.map(async step => {
+          if (Array.isArray(step)) {
+            return await processParallel(step, [item]);
+          } else {
+            return await processStep(step, [item]);
+          }
+        }));
+        return results.flat();
+      }));
+    }
+
+    async function processGenerator(gen, input) {
+      let results = [];
+      for await (const item of input) {
+        const generator = gen.call(context, item);
+        for await (const result of generator) {
+          results.push(result);
+        }
+      }
+      return results;
+    }
+
+    async function processFunction(fn, input) {
+      if (input.length === 1) {
+        const result = await fn.call(context, input[0]);
+        return [result];
+      } else {
+        const result = await fn.call(context, input);
+        return Array.isArray(result) ? result : [result];
+      }
+    }
+
+    function isGenerator(fn) {
+      return fn.constructor.name === 'GeneratorFunction' || 
+             fn.constructor.name === 'AsyncGeneratorFunction';
+    }
+
     try {
       for (const step of pipeline) {
         logger.info(`Processing step ${stepIndex}`);
         validateStep(step);
         
         const processingPromise = processStep(step, state);
-        
+      
         const timeoutPromise = new Promise((_, reject) => 
           setTimeout(() => reject(new StreamingError(`Step ${stepIndex} timed out`, stepIndex)), config.timeout)
         );
@@ -103,70 +180,7 @@ module.exports = function createStreaming(options = {}) {
       logger.info('Streaming pipeline completed');
       emitter.emit('end');
     }
-
-    function validateStep(step) {
-
-      return true;
-
-
-      if (!(Array.isArray(step) || typeof step === 'function')) {
-        throw new StreamingError('Invalid pipeline step', stepIndex);
-      }
-    }
-
-    async function processStep(step, input) {
-      try {
-        if (Array.isArray(step)) {
-          return await processParallel(step, input);
-        } else if (isGenerator(step)) {
-          return await processGenerator(step, input);
-        } else if (typeof step === 'function') {
-          return await processFunction(step, input);
-        } else {
-          return step;
-        }
-      } catch (error) {
-        throw new StreamingError('Error processing step', stepIndex, error);
-      }
-    }
-
-    async function processParallel(steps, input) {
-      return await Promise.all(input.map(async item => {
-        const results = await Promise.all(steps.map(async step => {
-          if (Array.isArray(step)) {
-            return await processParallel(step, [item]);
-          } else {
-            return await processStep(step, [item]);
-          }
-        }));
-        return results.flat();
-      }));
-    }
-
-    async function processGenerator(gen, input) {
-      let results = [];
-      for (const item of input) {
-        const generator = gen.call(context, item);
-        for await (const result of generator) {
-          results.push(result);
-        }
-      }
-      return results;
-    }
-
-    async function processFunction(fn, input) {
-      if (input.length === 1) {
-        const result = await fn.call(context, input[0]);
-        return [result];
-      } else {
-        const result = await fn.call(context, input);
-        return Array.isArray(result) ? result : [result];
-      }
-    }
   }
 
-  function isGenerator(fn) {
-    return fn.constructor.name === 'GeneratorFunction' || 
-           fn.constructor.name === 'AsyncGeneratorFunction';
-  }
+  return streaming;
 };

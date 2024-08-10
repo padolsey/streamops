@@ -58,4 +58,42 @@ describe('streaming abstraction : basic data flows', () => {
     });
   });
 
+  test('Topic and BadThings pipeline without race conditions', async () => {
+    const pipeline = [
+      function* generateTopics() {
+        yield 'Quantum Mechanics';
+        yield 'Evolutionary Biology';
+      },
+      async function* (topic) {
+        const badThings = [
+          `Bad thing 1 about ${topic}`,
+          `Bad thing 2 about ${topic}`
+        ];
+        
+        yield { topic, badThings };
+      },
+      function (result) {
+        if (!this.results) this.results = [];
+        this.results.push(result);
+        return this.results;
+      }
+    ];
+
+    const results = [];
+    for await (const item of streaming(pipeline)) {
+      results.push(item);
+    }
+
+    expect(results[results.length - 1]).toEqual([
+      {
+        topic: 'Quantum Mechanics',
+        badThings: ['Bad thing 1 about Quantum Mechanics', 'Bad thing 2 about Quantum Mechanics']
+      },
+      {
+        topic: 'Evolutionary Biology',
+        badThings: ['Bad thing 1 about Evolutionary Biology', 'Bad thing 2 about Evolutionary Biology']
+      }
+    ]);
+  });
+
 });

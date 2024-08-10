@@ -1,6 +1,6 @@
 {
   "name": "streeem",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "main": "./streaming.js",
   "scripts": {
     "test": "NODE_ENV=test jest"

@@ -80,4 +80,28 @@ describe('Parallel & Nesting', () => {
     expect((await stream.next()).value).toEqual(true);
   });
 
+  // test('Nested streaming pipelines with sub-streeems', async () => {
+  //   const results = [];
+  //   for await (const item of streaming([
+  //     function*() {
+  //       yield 'hello';
+  //       yield 'hi';
+  //     },
+  //     streaming([
+  //       function*(greeting) {
+  //         yield greeting.toUpperCase()
+  //       }
+  //     ])
+  //   ])) {
+  //     results.push(item);
+  //   }
+
+  //   expect(results).toEqual([
+  //     'Result: 3',
+  //     'Result: 30',
+  //     'Result: 5',
+  //     'Result: 50'
+  //   ]);
+  // });
+  
 });
