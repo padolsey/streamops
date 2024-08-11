@@ -36,7 +36,7 @@ module.exports = function createStreaming(options = {}) {
   const logger = createLogger(config);
 
   async function* streaming(pipeline) {
-    const context = {};
+    const context = pipeline;
     const emitter = new EventEmitter();
 
     if (pipeline.length === 0) {
