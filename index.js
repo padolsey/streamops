@@ -1,9 +1,9 @@
 const EventEmitter = require('events');
 
-class StreamingError extends Error {
+class StreamOpsError extends Error {
   constructor(message, step, originalError = null) {
     super(message);
-    this.name = 'StreamingError';
+    this.name = 'StreamOpsError';
     this.step = step;
     this.originalError = originalError;
   }
@@ -25,7 +25,7 @@ function createLogger(options) {
   }, {});
 }
 
-module.exports = function createStreaming(options = {}) {
+module.exports = function createStreamOps(options = {}) {
   const defaultOptions = {
     timeout: 30000,
     bufferSize: 1000,
@@ -69,7 +69,7 @@ module.exports = function createStreaming(options = {}) {
           return step;
         }
       } catch (error) {
-        throw new StreamingError('Error processing step', stepIndex, error);
+        throw new StreamOpsError('Error processing step', stepIndex, error);
       }
     }
 
@@ -132,16 +132,16 @@ module.exports = function createStreaming(options = {}) {
         const processingPromise = processStep(step, state);
       
         const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new StreamingError(`Step ${stepIndex} timed out`, stepIndex)), config.timeout)
+          setTimeout(() => reject(new StreamOpsError(`Step ${stepIndex} timed out`, stepIndex)), config.timeout)
         );
 
         try {
           state = await Promise.race([processingPromise, timeoutPromise]);
         } catch (error) {
-          if (error instanceof StreamingError) {
-            throw error; // Rethrow StreamingErrors (including timeout errors) directly
+          if (error instanceof StreamOpsError) {
+            throw error; // Rethrow StreamOpsErrors (including timeout errors) directly
           }
-          throw new StreamingError(`Error in step ${stepIndex}`, stepIndex, error);
+          throw new StreamOpsError(`Error in step ${stepIndex}`, stepIndex, error);
         }
 
         stepIndex++;

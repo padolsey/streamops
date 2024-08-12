@@ -1,4 +1,4 @@
-const streaming = require('../streaming.js')({ timeout: 30000, bufferSize: 1000, logLevel: 'info' });
+const streaming = require('../index.js')({ timeout: 30000, bufferSize: 1000, logLevel: 'info' });
 
 describe('Generator objects and async operations', () => {
   test('Handles generator objects', async () => {

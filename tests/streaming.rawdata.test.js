@@ -1,4 +1,4 @@
-const streaming = require('../streaming.js')({
+const streaming = require('../index.js')({
   timeout: 30000,
   bufferSize: 1000,
   logLevel: 'info'

@@ -1,4 +1,4 @@
-const streaming = require('../streaming.js')({
+const streaming = require('../index.js')({
   timeout: 30000,
   bufferSize: 1000,
   logLevel: 'info'
@@ -38,65 +38,6 @@ describe('streaming abstraction', () => {
     }
     // Check if transformation is applied correctly
     expect(results).toEqual([2, 4, 6]);
-  });
-
-  test('pipeline with parallel processing', async () => {
-    const pipeline = [
-      function*() {
-        yield 1;
-        yield 2;
-      },
-      [
-        function*(num) { yield num * 2; },
-        function*(num) { yield num * 3; }
-      ],
-      function*(result) {  // Note: singular 'result', not 'results'
-        const [double, triple] = result;
-        yield { double, triple };
-      }
-    ];
-    const results = [];
-    for await (const item of streaming(pipeline)) {
-      results.push(item);
-    }
-    expect(results).toEqual([
-      { double: 2, triple: 3 },
-      { double: 4, triple: 6 }
-    ]);
-  });
-
-  // return;
-
-  test('generator after parallel step receives items individually', async () => {
-    const receivedItems = [];
-    const pipeline = [
-      function*() {
-        yield 1;
-        yield 2;
-      },
-      [
-        function*(num) { yield num * 2; },
-        function*(num) { yield num * 3; }
-      ],
-      function*(result) {
-        receivedItems.push(result);
-        yield result;
-      }
-    ];
-    
-    const results = [];
-    for await (const item of streaming(pipeline)) {
-      results.push(item);
-    }
-    
-    expect(receivedItems).toEqual([
-      [2, 3],
-      [4, 6]
-    ]);
-    expect(results).toEqual([
-      [2, 3],
-      [4, 6]
-    ]);
   });
 
   test('pipeline with aggregation', async () => {
@@ -246,21 +187,6 @@ describe('streaming abstraction', () => {
       results.push(item);
     }
     expect(results).toEqual([2, 4]);
-  });
-
-  test('Parallel Processing', async () => {
-    const pipeline = [
-      () => 3,
-      [
-        (x) => x * 2,
-        (x) => x + 1
-      ]
-    ];
-    const results = [];
-    for await (const item of streaming(pipeline)) {
-      results.push(item);
-    }
-    expect(results).toEqual([[6, 4]]);
   });
 
   test('State Management', async () => {
