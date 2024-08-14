@@ -32,10 +32,8 @@ describe('streaming abstraction', () => {
       
       // Generator: Final stream - yield the sum multiple times
       function* repeatSum(sum) {
-        // for (const sum of sums) {
-          yield `The sum is: ${sum}`;
-          yield `Double the sum is: ${sum * 2}`;
-        // }
+        yield `The sum is: ${sum}`;
+        yield `Double the sum is: ${sum * 2}`;
       }
     ];
 

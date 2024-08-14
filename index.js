@@ -27,9 +27,11 @@ function createLogger(options) {
 
 module.exports = function createStreamOps(options = {}) {
   const defaultOptions = {
-    timeout: 30000,
+    timeout: 100000,
     bufferSize: 1000,
-    logLevel: 'info'
+    logLevel: 'info',
+    yieldTimeout: 20000,
+    downstreamTimeout: 30000
   };
 
   const config = { ...defaultOptions, ...options };
@@ -46,6 +48,16 @@ module.exports = function createStreamOps(options = {}) {
 
     let state = context.state = [undefined];
     let stepIndex = 0;
+    let lastDownstreamYield = Date.now();
+    let downstreamTimeoutWarningIssued = false;
+
+    const checkDownstreamTimeout = setInterval(() => {
+      const timeSinceLastYield = Date.now() - lastDownstreamYield;
+      if (timeSinceLastYield > config.downstreamTimeout && !downstreamTimeoutWarningIssued) {
+        logger.warn(`No data received downstream for ${config.downstreamTimeout}ms`);
+        downstreamTimeoutWarningIssued = true;
+      }
+    }, Math.min(config.downstreamTimeout, 1000));
 
     function validateStep(step) {
       return true;
@@ -53,21 +65,39 @@ module.exports = function createStreamOps(options = {}) {
 
     async function processStep(step, input) {
       try {
+        let lastYieldTime = Date.now();
+        let hasYielded = false;
+
+        const checkYieldTimeout = setInterval(() => {
+          if (Date.now() - lastYieldTime > config.yieldTimeout) {
+            logger.warn(`Step ${stepIndex} has not yielded for ${config.yieldTimeout}ms`);
+          }
+        }, config.yieldTimeout);
+
+        const onYield = () => {
+          hasYielded = true;
+          lastYieldTime = Date.now();
+        };
+
+        let result;
         if (Array.isArray(step)) {
-          return await processParallel(step, input);
+          result = await processParallel(step, input);
         } else if (isGenerator(step)) {
-          return await processGenerator(step, input);
+          result = await processGenerator(step, input, onYield);
         } else if (typeof step === 'function') {
-          return await processFunction(step, input);
+          result = await processFunction(step, input);
         } else if (isComplexIterable(step)) {
-          return await processGenerator(async function*() {
+          result = await processGenerator(async function*() {
             yield* await (step[Symbol.iterator] || step[Symbol.asyncIterator])
               ? step
               : [step]
-          }, input);
+          }, input, onYield);
         } else {
-          return step;
+          result = step;
         }
+
+        clearInterval(checkYieldTimeout);
+        return result;
       } catch (error) {
         throw new StreamOpsError('Error processing step', stepIndex, error);
       }
@@ -98,12 +128,13 @@ module.exports = function createStreamOps(options = {}) {
       }));
     }
 
-    async function processGenerator(gen, input) {
+    async function processGenerator(gen, input, onYield) {
       let results = [];
       for await (const item of input) {
         const generator = gen.call(context, item);
         for await (const result of generator) {
           results.push(result);
+          if (onYield) onYield();
         }
       }
       return results;
@@ -139,7 +170,7 @@ module.exports = function createStreamOps(options = {}) {
           state = await Promise.race([processingPromise, timeoutPromise]);
         } catch (error) {
           if (error instanceof StreamOpsError) {
-            throw error; // Rethrow StreamOpsErrors (including timeout errors) directly
+            throw error;
           }
           throw new StreamOpsError(`Error in step ${stepIndex}`, stepIndex, error);
         }
@@ -154,22 +185,34 @@ module.exports = function createStreamOps(options = {}) {
 
         if (state.length > config.bufferSize) {
           logger.debug(`Buffer size exceeded. Current size: ${state.length}`);
-          yield* state.splice(0, state.length - config.bufferSize);
+          for (const item of state.splice(0, state.length - config.bufferSize)) {
+            yield item;
+            lastDownstreamYield = Date.now();
+            downstreamTimeoutWarningIssued = false;
+          }
         }
       }
 
       if (typeof state == 'string') {
         yield state;
+        lastDownstreamYield = Date.now();
+        downstreamTimeoutWarningIssued = false;
       } else if (typeof state[Symbol.asyncIterator] === 'function') {
         for await (const item of state) {
           yield item;
+          lastDownstreamYield = Date.now();
+          downstreamTimeoutWarningIssued = false;
         }
       } else if (typeof state[Symbol.iterator] === 'function') {
         for (const item of state) {
           yield item;
+          lastDownstreamYield = Date.now();
+          downstreamTimeoutWarningIssued = false;
         }
       } else {
         yield state;
+        lastDownstreamYield = Date.now();
+        downstreamTimeoutWarningIssued = false;
       }
       
     } catch (error) {
@@ -177,6 +220,7 @@ module.exports = function createStreamOps(options = {}) {
       emitter.emit('error', error);
       throw error;
     } finally {
+      clearInterval(checkDownstreamTimeout);
       logger.info('Streaming pipeline completed');
       emitter.emit('end');
     }
