@@ -73,8 +73,8 @@ describe('streaming abstraction error handling', () => {
         yield 1;
         yield 2;
       },
-      async function () {
-        await new Promise(resolve => setTimeout(resolve, 200)); // This will timeout
+      async function() {
+        await new Promise(resolve => setTimeout(resolve, 1000)); // This will timeout
         return 42;
       }
     ];

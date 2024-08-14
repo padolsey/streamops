@@ -57,6 +57,55 @@ describe('streaming abstraction', () => {
     expect(results).toEqual([6]);
   });
 
+  test('Real-time streaming with short delays', async () => {
+    jest.useRealTimers(); // Use real timers for this test
+
+    const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+    
+    const pipeline = [
+      async function*() {
+        for (let i = 1; i <= 10; i++) {
+          yield `Item ${i}\n`;
+          await delay(50); // 100ms delay
+        }
+      }
+    ];
+
+    const results = [];
+    const timings = [];
+    const logs = [];
+
+    const customLog = (message) => {
+      const timestamp = new Date().toISOString();
+      logs.push({ timestamp, message });
+    };
+
+    const stream = streaming(pipeline);
+
+    for await (const item of stream) {
+      customLog(`xmllm yielding item`);
+      results.push(item);
+      timings.push(Date.now());
+    }
+
+    expect(results).toEqual(['Item 1\n', 'Item 2\n', 'Item 3\n', 'Item 4\n', 'Item 5\n', 'Item 6\n', 'Item 7\n', 'Item 8\n', 'Item 9\n', 'Item 10\n']);
+    
+    // Check if items were received approximately 100ms apart
+    for (let i = 1; i < timings.length; i++) {
+      const timeDiff = timings[i] - timings[i-1];
+      expect(timeDiff).toBeGreaterThanOrEqual(40); // Allow for small timing inconsistencies
+      expect(timeDiff).toBeLessThanOrEqual(60);
+    }
+
+    // Check if customLog was called with approximately 100ms intervals
+    expect(logs.length).toBe(10);
+    for (let i = 1; i < logs.length; i++) {
+      const timeDiff = new Date(logs[i].timestamp) - new Date(logs[i-1].timestamp);
+      expect(timeDiff).toBeGreaterThanOrEqual(40);
+      expect(timeDiff).toBeLessThanOrEqual(60);
+    }
+  });
+
   test('pipeline with async operations', async () => {
     const pipeline = [
       function*() {
@@ -192,8 +241,10 @@ describe('streaming abstraction', () => {
   test('State Management', async () => {
     const pipeline = [
       () => ({count: 1}),
-      ({count}) => ({count: count + 1}),
-      ({count}) => `Final count: ${count}`
+      ([{count}]) => {
+        return {count: count + 1};
+      },
+      ([{count}]) => `Final count: ${count}`
     ];
     const results = [];
     for await (const item of streaming(pipeline)) {
@@ -202,12 +253,12 @@ describe('streaming abstraction', () => {
     expect(results).toEqual(['Final count: 2']);
   });
 
-  test('Async Operations', async () => {
+  test('Async Operations [functions]', async () => {
     const fetchData = async () => 'data';
     const processData = async (data) => data.toUpperCase();
     const pipeline = [
       async () => await fetchData(),
-      async (data) => await processData(data)
+      async ([data]) => await processData(data)
     ];
     const results = [];
     for await (const item of streaming(pipeline)) {
@@ -265,13 +316,11 @@ describe('streaming abstraction', () => {
           }
         }
       ],
-      function*(messages) {
-        for (const {message} of messages) {
-          yield {
-            message,
-            name: 'Michael'
-          }
-        }
+      function*({message}) {
+        yield {
+          message,
+          name: 'Michael'
+      }
       }
     ];
 
@@ -454,6 +503,47 @@ describe('streaming abstraction', () => {
         isAdult: true
       }
     ]);
+  });
+
+  test('Delayed streaming with timing verification', async () => {
+    jest.useFakeTimers();
+    
+    const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+    
+    const pipeline = [
+      async function*() {
+        for (let i = 1; i <= 5; i++) {
+          yield `Item ${i}`;
+          await delay(1000); // 1 second delay
+        }
+      }
+    ];
+
+    const results = [];
+    const timings = [];
+    
+    const streamPromise = (async () => {
+      for await (const item of streaming(pipeline)) {
+        results.push(item);
+        timings.push(Date.now());
+        // jest.advanceTimersByTime(1000); // Advance time by 1 second
+      }
+    })();
+
+    await jest.runAllTimersAsync();
+    await streamPromise;
+
+    expect(results).toEqual(['Item 1', 'Item 2', 'Item 3', 'Item 4', 'Item 5']);
+    
+    // Check if items were received approximately 1 second apart
+    for (let i = 1; i < timings.length; i++) {
+      const timeDiff = timings[i] - timings[i-1];
+      console.log('timeDiff', timeDiff);
+      expect(timeDiff).toBeGreaterThanOrEqual(900); // Allow for small timing inconsistencies
+      expect(timeDiff).toBeLessThanOrEqual(1100);
+    }
+
+    jest.useRealTimers();
   });
 
 });

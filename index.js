@@ -2,7 +2,11 @@ const EventEmitter = require('events');
 
 class StreamOpsError extends Error {
   constructor(message, step, originalError = null) {
-    super(message);
+    super(
+      message
+      + (step ? ': Step ' + step : '')
+      + (originalError ? ': Original Error: ' + originalError : '')
+    );
     this.name = 'StreamOpsError';
     this.step = step;
     this.originalError = originalError;
@@ -63,10 +67,9 @@ module.exports = function createStreamOps(options = {}) {
       return true;
     }
 
-    async function processStep(step, input) {
+    async function* processStep(step, input) {
       try {
         let lastYieldTime = Date.now();
-        let hasYielded = false;
 
         const checkYieldTimeout = setInterval(() => {
           if (Date.now() - lastYieldTime > config.yieldTimeout) {
@@ -75,31 +78,58 @@ module.exports = function createStreamOps(options = {}) {
         }, config.yieldTimeout);
 
         const onYield = () => {
-          hasYielded = true;
           lastYieldTime = Date.now();
         };
 
-        let result;
-        if (Array.isArray(step)) {
-          result = await processParallel(step, input);
-        } else if (isGenerator(step)) {
-          result = await processGenerator(step, input, onYield);
-        } else if (typeof step === 'function') {
-          result = await processFunction(step, input);
-        } else if (isComplexIterable(step)) {
-          result = await processGenerator(async function*() {
-            yield* await (step[Symbol.iterator] || step[Symbol.asyncIterator])
-              ? step
-              : [step]
-          }, input, onYield);
-        } else {
-          result = step;
-        }
+        const processingPromise = (async function*() {
+          if (Array.isArray(step)) {
+            yield* processParallel(step, input);
+          } else if (isGenerator(step)) {
+            yield* processGenerator(step, input, onYield);
+          } else if (typeof step === 'function') {
+            yield* await withTimeout(processFunction(step, input), config.timeout, `Step ${stepIndex} timed out`);
+          } else if (isComplexIterable(step)) {
+            yield* processGenerator(async function*() {
+              yield* await (step[Symbol.iterator] || step[Symbol.asyncIterator])
+                ? step
+                : [step]
+            }, input, onYield);
+          } else {
+            yield step;
+          }
+        })();
+
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error(`Step ${stepIndex} timed out`)), config.timeout);
+        });
+
+        yield* race(processingPromise, timeoutPromise);
 
         clearInterval(checkYieldTimeout);
-        return result;
       } catch (error) {
         throw new StreamOpsError('Error processing step', stepIndex, error);
+      }
+    }
+
+    async function* withTimeout(promise, ms, message) {
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error(message)), ms);
+      });
+
+      try {
+        const result = await Promise.race([promise, timeoutPromise]);
+        yield* (Array.isArray(result) ? result : [result]);
+      } catch (error) {
+        throw error;
+      }
+    }
+
+    async function* race(generatorPromise, timeoutPromise) {
+      try {
+        const generator = await Promise.race([generatorPromise, timeoutPromise]);
+        yield* generator;
+      } catch (error) {
+        throw error;
       }
     }
 
@@ -115,39 +145,56 @@ module.exports = function createStreamOps(options = {}) {
           typeof obj !== 'symbol';
     }
 
-    async function processParallel(steps, input) {
-      return await Promise.all(input.map(async item => {
-        const results = await Promise.all(steps.map(async step => {
+    async function* processParallel(steps, input) {
+      const inputArray = [];
+      for await (const item of input) {
+        inputArray.push(item);
+      }
+
+      const processors = inputArray.map(async (item) => {
+        const results = [];
+        for (const step of steps) {
           if (Array.isArray(step)) {
-            return await processParallel(step, [item]);
+            for await (const result of processParallel(step, [item])) {
+              results.push(result);
+            }
           } else {
-            return await processStep(step, [item]);
+            for await (const result of processStep(step, [item])) {
+              results.push(result);
+            }
           }
-        }));
-        return results.flat();
-      }));
+        }
+        return results;
+      });
+
+      const iterator = processors[Symbol.iterator]();
+      let result = iterator.next();
+      while (!result.done) {
+        const processor = await result.value;
+        for (const item of processor) {
+          yield item;
+        }
+        result = iterator.next();
+      }
     }
 
-    async function processGenerator(gen, input, onYield) {
-      let results = [];
+    async function* processGenerator(gen, input, onYield) {
       for await (const item of input) {
         const generator = gen.call(context, item);
         for await (const result of generator) {
-          results.push(result);
+          yield result;
           if (onYield) onYield();
         }
       }
-      return results;
     }
 
     async function processFunction(fn, input) {
-      if (input.length === 1) {
-        const result = await fn.call(context, input[0]);
-        return [result];
-      } else {
-        const result = await fn.call(context, input);
-        return Array.isArray(result) ? result : [result];
+      const inputArray = [];
+      for await (const item of input) {
+        inputArray.push(item);
       }
+      const result = await fn.call(context, inputArray);
+      return Array.isArray(result) ? result : [result];
     }
 
     function isGenerator(fn) {
@@ -160,14 +207,25 @@ module.exports = function createStreamOps(options = {}) {
         logger.info(`Processing step ${stepIndex}`);
         validateStep(step);
         
-        const processingPromise = processStep(step, state);
-      
-        const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new StreamOpsError(`Step ${stepIndex} timed out`, stepIndex)), config.timeout)
-        );
+        const processingGenerator = processStep(step, state);
 
         try {
-          state = await Promise.race([processingPromise, timeoutPromise]);
+          state = [];  // Reset state for collecting items from this step
+          for await (const item of processingGenerator) {
+            if (stepIndex === pipeline.length - 1) {
+              // If it's the last step, yield the item to the consumer
+              yield item;
+            } else {
+              // Otherwise, collect the item for the next step
+              state.push(item);
+            }
+            lastDownstreamYield = Date.now();
+            downstreamTimeoutWarningIssued = false;
+            
+            if (emitter.listenerCount('data') > 0) {
+              emitter.emit('data', item);
+            }
+          }
         } catch (error) {
           if (error instanceof StreamOpsError) {
             throw error;
@@ -176,43 +234,6 @@ module.exports = function createStreamOps(options = {}) {
         }
 
         stepIndex++;
-
-        if (emitter.listenerCount('data') > 0) {
-          for (const item of state) {
-            emitter.emit('data', item);
-          }
-        }
-
-        if (state.length > config.bufferSize) {
-          logger.debug(`Buffer size exceeded. Current size: ${state.length}`);
-          for (const item of state.splice(0, state.length - config.bufferSize)) {
-            yield item;
-            lastDownstreamYield = Date.now();
-            downstreamTimeoutWarningIssued = false;
-          }
-        }
-      }
-
-      if (typeof state == 'string') {
-        yield state;
-        lastDownstreamYield = Date.now();
-        downstreamTimeoutWarningIssued = false;
-      } else if (typeof state[Symbol.asyncIterator] === 'function') {
-        for await (const item of state) {
-          yield item;
-          lastDownstreamYield = Date.now();
-          downstreamTimeoutWarningIssued = false;
-        }
-      } else if (typeof state[Symbol.iterator] === 'function') {
-        for (const item of state) {
-          yield item;
-          lastDownstreamYield = Date.now();
-          downstreamTimeoutWarningIssued = false;
-        }
-      } else {
-        yield state;
-        lastDownstreamYield = Date.now();
-        downstreamTimeoutWarningIssued = false;
       }
       
     } catch (error) {

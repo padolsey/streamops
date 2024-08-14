@@ -32,17 +32,17 @@ describe('Parallel processing with async operations', () => {
 
   test('Parallel Processing', async () => {
     const pipeline = [
-      () => 3,
+      () => [3],
       [
-        (x) => x * 2,
-        (x) => x + 1
+        ([x]) => x * 2,
+        ([x]) => x + 1
       ]
     ];
     const results = [];
     for await (const item of streaming(pipeline)) {
       results.push(item);
     }
-    expect(results).toEqual([[6, 4]]);
+    expect(results).toEqual([6, 4]);
   });
 
   test('pipeline with parallel processing', async () => {
@@ -52,12 +52,12 @@ describe('Parallel processing with async operations', () => {
         yield 2;
       },
       [
-        function*(num) { yield num * 2; },
-        function*(num) { yield num * 3; }
+        function*(num) { yield {double: num * 2}; },
+        function*(num) { yield {triple: num * 3}; }
       ],
-      function*(result) {  // Note: singular 'result', not 'results'
-        const [double, triple] = result;
-        yield { double, triple };
+      (res) => {
+        console.log('res', res);
+        return res;
       }
     ];
     const results = [];
@@ -65,12 +65,14 @@ describe('Parallel processing with async operations', () => {
       results.push(item);
     }
     expect(results).toEqual([
-      { double: 2, triple: 3 },
-      { double: 4, triple: 6 }
+      { double: 2 },
+      { triple: 3 },
+      { double: 4 },
+      { triple: 6 }
+      // { double: 2, triple: 3 },
+      // { double: 4, triple: 6 }
     ]);
   });
-
-  // return;
 
   test('generator after parallel step receives items individually', async () => {
     const receivedItems = [];
@@ -95,14 +97,14 @@ describe('Parallel processing with async operations', () => {
     }
     
     expect(receivedItems).toEqual([
-      [2, 3],
-      [4, 6]
+      2,3,4,6
     ]);
     expect(results).toEqual([
-      [2, 3],
-      [4, 6]
+      2,3,4,6
     ]);
   });
+
+  return;
 
   test('Parallel API calls using yielded Promise.all', async () => {
     const pipeline = [

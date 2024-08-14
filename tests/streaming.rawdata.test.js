@@ -41,12 +41,14 @@ describe('streaming abstraction : basic data flows', () => {
     });
   });
 
-  test('More Advanced Data flowing', async () => {
+  test('More Advanced Data flowing w/ fns', async () => {
     const res = await (streaming([
-      () => [1, 2, 3],
+      () => [[1, 2, 3]], // arrays returned items yielded individually
+      // therefore a return of [[_THING_]] (double nested array)
+      // will be equiv to a yield of [_THING_]
       [
-        (nums) => nums.join(','),
-        (nums) => nums.join('%')
+        ([nums]) => nums.join(','),
+        ([nums]) => nums.join('%')
       ],
       ([x, y]) => {
         return {x, y}
