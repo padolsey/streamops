@@ -50,8 +50,7 @@ module.exports = function createStreamOps(options = {}) {
       return;
     }
 
-    let state = context.state = [undefined];
-    let stepIndex = 0;
+    let stepIndex = 1;
     let lastDownstreamYield = Date.now();
     let downstreamTimeoutWarningIssued = false;
 
@@ -67,7 +66,7 @@ module.exports = function createStreamOps(options = {}) {
       return true;
     }
 
-    async function* processStep(step, input) {
+    async function* processStep(step, [input]) {
       try {
         let lastYieldTime = Date.now();
 
@@ -81,29 +80,21 @@ module.exports = function createStreamOps(options = {}) {
           lastYieldTime = Date.now();
         };
 
-        const processingPromise = (async function*() {
-          if (Array.isArray(step)) {
-            yield* processParallel(step, input);
-          } else if (isGenerator(step)) {
-            yield* processGenerator(step, input, onYield);
-          } else if (typeof step === 'function') {
-            yield* await withTimeout(processFunction(step, input), config.timeout, `Step ${stepIndex} timed out`);
-          } else if (isComplexIterable(step)) {
-            yield* processGenerator(async function*() {
-              yield* await (step[Symbol.iterator] || step[Symbol.asyncIterator])
-                ? step
-                : [step]
-            }, input, onYield);
-          } else {
-            yield step;
-          }
-        })();
-
-        const timeoutPromise = new Promise((_, reject) => {
-          setTimeout(() => reject(new Error(`Step ${stepIndex} timed out`)), config.timeout);
-        });
-
-        yield* race(processingPromise, timeoutPromise);
+        if (Array.isArray(step)) {
+          yield* processParallel(step, input);
+        } else if (isGenerator(step)) {
+          yield* processGenerator(step, input, onYield);
+        } else if (typeof step === 'function') {
+          yield* processFunction(step, [input]);
+        } else if (isComplexIterable(step)) {
+          yield* processGenerator(async function*() {
+            yield* await (step[Symbol.iterator] || step[Symbol.asyncIterator])
+              ? step
+              : [step]
+          }, input, onYield);
+        } else {
+          yield step;
+        }
 
         clearInterval(checkYieldTimeout);
       } catch (error) {
@@ -146,55 +137,30 @@ module.exports = function createStreamOps(options = {}) {
     }
 
     async function* processParallel(steps, input) {
-      const inputArray = [];
-      for await (const item of input) {
-        inputArray.push(item);
-      }
-
-      const processors = inputArray.map(async (item) => {
-        const results = [];
-        for (const step of steps) {
-          if (Array.isArray(step)) {
-            for await (const result of processParallel(step, [item])) {
-              results.push(result);
-            }
-          } else {
-            for await (const result of processStep(step, [item])) {
-              results.push(result);
-            }
-          }
+      for (const step of steps) {
+        if (Array.isArray(step)) {
+          yield* processParallel(step, input);
+        } else {
+          yield* processStep(step, [input]);
         }
-        return results;
-      });
-
-      const iterator = processors[Symbol.iterator]();
-      let result = iterator.next();
-      while (!result.done) {
-        const processor = await result.value;
-        for (const item of processor) {
-          yield item;
-        }
-        result = iterator.next();
       }
     }
 
     async function* processGenerator(gen, input, onYield) {
-      for await (const item of input) {
-        const generator = gen.call(context, item);
-        for await (const result of generator) {
-          yield result;
-          if (onYield) onYield();
-        }
+      const generator = gen.call(context, input);
+      for await (const result of generator) {
+        yield result;
+        if (onYield) onYield();
       }
     }
 
-    async function processFunction(fn, input) {
+    async function* processFunction(fn, input) {
       const inputArray = [];
       for await (const item of input) {
         inputArray.push(item);
       }
       const result = await fn.call(context, inputArray);
-      return Array.isArray(result) ? result : [result];
+      yield* (Array.isArray(result) ? result : [result]);
     }
 
     function isGenerator(fn) {
@@ -203,38 +169,27 @@ module.exports = function createStreamOps(options = {}) {
     }
 
     try {
-      for (const step of pipeline) {
-        logger.info(`Processing step ${stepIndex}`);
-        validateStep(step);
-        
-        const processingGenerator = processStep(step, state);
 
-        try {
-          state = [];  // Reset state for collecting items from this step
-          for await (const item of processingGenerator) {
-            if (stepIndex === pipeline.length - 1) {
-              // If it's the last step, yield the item to the consumer
-              yield item;
-            } else {
-              // Otherwise, collect the item for the next step
-              state.push(item);
-            }
-            lastDownstreamYield = Date.now();
-            downstreamTimeoutWarningIssued = false;
-            
-            if (emitter.listenerCount('data') > 0) {
-              emitter.emit('data', item);
-            }
-          }
-        } catch (error) {
-          if (error instanceof StreamOpsError) {
-            throw error;
-          }
-          throw new StreamOpsError(`Error in step ${stepIndex}`, stepIndex, error);
+      async function* processPipeline(input, stepIndex = 0) {
+        if (stepIndex >= pipeline.length) {
+          yield* input;
+          return;
         }
 
-        stepIndex++;
+        const step = pipeline[stepIndex];
+        logger.info(`Processing step ${stepIndex}`);
+        validateStep(step);
+
+        for await (const item of input) {
+          const processingGenerator = processStep(step, [item]);
+          stepIndex++;
+          for await (const result of processingGenerator) {
+            yield* processPipeline([result], stepIndex);
+          }
+        }
       }
+
+      yield* processPipeline([undefined]);
       
     } catch (error) {
       logger.error('Error in streaming pipeline:', error);

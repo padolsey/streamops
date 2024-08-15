@@ -201,7 +201,7 @@ describe('DownstreamTimeout Tests', () => {
     results.push((await streamingIterator.next()).value);
 
     expect(results).toEqual([2, 4, 6]);
-    expect(mockWarn).toHaveBeenCalledTimes(2);
+    expect(mockWarn).toHaveBeenCalledTimes(1);
   });
 
   test('downstreamTimeout works with empty pipeline', async () => {

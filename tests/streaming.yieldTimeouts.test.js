@@ -53,7 +53,7 @@ describe('YieldTimeout Tests', () => {
     expect(results).toEqual([1, 2, 3]);
     console.log(mockWarn.mock.calls.join(','))
     expect(
-      /Step 0 has not yielded for 50ms/
+      /Step 1 has not yielded for 50ms/
         .test(
           mockWarn.mock.calls.join(',')
         )
@@ -95,7 +95,7 @@ describe('YieldTimeout Tests', () => {
     expect(results.flat()).toEqual([1, 2, 3]);
     expect(mockWarn).toHaveBeenCalledWith(
       expect.stringMatching(/\[.*\] \[WARN\]/),
-      "Step 0 has not yielded for 100ms"
+      "Step 1 has not yielded for 100ms"
     );
   });
 

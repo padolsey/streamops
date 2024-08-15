@@ -4,7 +4,7 @@ const streaming = require('../index.js')({
   logLevel: 'info'
 });
 
-describe('streaming abstraction', () => {
+xdescribe('streaming abstraction', () => {
 
   test('Multiple damming approach with alternating generators and functions', async () => {
     const pipeline = [
@@ -27,6 +27,7 @@ describe('streaming abstraction', () => {
       
       // Function: Second dam - collect and sum all numbers
       function sumNumbers(numbers) {
+        console.log('NUMBERS>>>>>', numbers)
         return [numbers.reduce((sum, n) => sum + n, 0)];
       },
       

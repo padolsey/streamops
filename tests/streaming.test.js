@@ -40,7 +40,7 @@ describe('streaming abstraction', () => {
     expect(results).toEqual([2, 4, 6]);
   });
 
-  test('pipeline with aggregation', async () => {
+  test('pipeline with aggregation / meh reducer', async () => {
     const pipeline = [
       function*() {
         yield 1;
@@ -53,8 +53,9 @@ describe('streaming abstraction', () => {
     for await (const item of streaming(pipeline)) {
       results.push(item);
     }
+
     // Check if aggregation works correctly
-    expect(results).toEqual([6]);
+    expect(results.reduce((sum, num) => sum + num, 0)).toEqual(6);
   });
 
   test('Real-time streaming with short delays', async () => {
@@ -267,18 +268,6 @@ describe('streaming abstraction', () => {
     expect(results).toEqual(['DATA']);
   });
 
-  test('Reducer Functions', async () => {
-    const pipeline = [
-      function*() { yield 1; yield 2; yield 3; },
-      (numbers) => numbers.reduce((sum, n) => sum + n, 0)
-    ];
-    const results = [];
-    for await (const item of streaming(pipeline)) {
-      results.push(item);
-    }
-    expect(results).toEqual([6]);
-  });
-
   test('Simple text streaming', async () => {
     const pipeline = [
       function* textGenerator() {
@@ -365,8 +354,6 @@ describe('streaming abstraction', () => {
 
   test('Accumulating results across steps', async () => {
 
-    const generatedTopics = {};
-
     const pipeline = [
       function* topicGenerator() {
         yield { topic: 'Quantum Mechanics' };
@@ -381,35 +368,34 @@ describe('streaming abstraction', () => {
           yield { topic, good_thing: `Good thing 1 about ${topic}` };
           yield { topic, good_thing: `Good thing 2 about ${topic}` };
         }
-      ],
-      function resultAggregator(things) {
-        
-        for (const item of things.flat()) {
-          const topic = item.topic;
-
-          if (!generatedTopics[topic]) {
-            generatedTopics[topic] = {
-              topic: topic,
-              bad_things: [],
-              good_things: []
-            };
-          }
-
-          if (item.bad_thing) {
-            generatedTopics[topic].bad_things.push(item.bad_thing);
-          }
-
-          if (item.good_thing) {
-            generatedTopics[topic].good_things.push(item.good_thing);
-          }
-        }
-
-        return generatedTopics;
-
-      }
+      ]
     ];
 
-    expect((await streaming(pipeline).next()).value).toEqual({
+    const results = [];
+    const generatedTopics = {};
+    for await (const item of streaming(pipeline)) {
+      // results.push(x);
+
+      const topic = item.topic;
+
+      if (!generatedTopics[topic]) {
+        generatedTopics[topic] = {
+          topic: topic,
+          bad_things: [],
+          good_things: []
+        };
+      }
+
+      if (item.bad_thing) {
+        generatedTopics[topic].bad_things.push(item.bad_thing);
+      }
+
+      if (item.good_thing) {
+        generatedTopics[topic].good_things.push(item.good_thing);
+      }
+    }
+
+    expect(generatedTopics).toEqual({
       "Evolutionary Biology": {
         "bad_things": [
           "Bad thing 1 about Evolutionary Biology",

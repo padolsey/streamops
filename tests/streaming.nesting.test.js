@@ -77,15 +77,13 @@ describe('Parallel & Nesting', () => {
       streaming([
         function*() {
           yield 'hello';
-          yield 'xyz';
-          yield 'HELLO';
-        },
-        (chunks) => {
-          return chunks.join('_');
         }
-      ])
+      ]),
+      function*(x) {
+        yield x + ' you';
+      }
     ]).next());
-    expect(res.value).toEqual('hello_xyz_HELLO');
+    expect(res.value).toEqual('hello you');
   });
 
   test('Not sure what this is testing but it seems desirable', async () => {
