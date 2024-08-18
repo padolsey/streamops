@@ -11,10 +11,10 @@ describe('Parallel & Nesting', () => {
       function*() { yield 1; yield 2; },
       [
         [
-          ([x]) => x * 2,
-          ([x]) => x * 3
+          (x) => x * 2,
+          (x) => x * 3
         ],
-        ([x]) => x + 100
+        (x) => x + 100
       ]
     ];
     const results = [];
@@ -61,8 +61,8 @@ describe('Parallel & Nesting', () => {
     const pipeline = [
       () => 2,
       [
-        [([x]) => x * 2, ([x]) => x * 3],
-        ([x]) => x + 1
+        [(x) => x * 2, (x) => x * 3],
+        (x) => x + 1
       ]
     ];
     const results = [];

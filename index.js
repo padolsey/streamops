@@ -42,6 +42,10 @@ module.exports = function createStreamOps(options = {}) {
   const logger = createLogger(config);
 
   async function* streaming(pipeline) {
+    if (pipeline instanceof StreamingChain) {
+      pipeline = pipeline.pipeline;
+    }
+
     const context = pipeline;
     const emitter = new EventEmitter();
 
@@ -85,7 +89,7 @@ module.exports = function createStreamOps(options = {}) {
         } else if (isGenerator(step)) {
           yield* processGenerator(step, input, onYield);
         } else if (typeof step === 'function') {
-          yield* processFunction(step, [input]);
+          yield* processFunction(step, input);
         } else if (isComplexIterable(step)) {
           yield* processGenerator(async function*() {
             yield* await (step[Symbol.iterator] || step[Symbol.asyncIterator])
@@ -155,12 +159,8 @@ module.exports = function createStreamOps(options = {}) {
     }
 
     async function* processFunction(fn, input) {
-      const inputArray = [];
-      for await (const item of input) {
-        inputArray.push(item);
-      }
-      const result = await fn.call(context, inputArray);
-      yield* (Array.isArray(result) ? result : [result]);
+      const result = await fn.call(context, input);
+      yield result;
     }
 
     function isGenerator(fn) {
@@ -169,7 +169,6 @@ module.exports = function createStreamOps(options = {}) {
     }
 
     try {
-
       async function* processPipeline(input, stepIndex = 0) {
         if (stepIndex >= pipeline.length) {
           yield* input;
@@ -202,5 +201,208 @@ module.exports = function createStreamOps(options = {}) {
     }
   }
 
-  return streaming;
+  const operators = {
+    map: function(fn) {
+      return function* (input) {
+        yield fn.call(this, input);
+      };
+    },
+
+    filter: function(predicate) {
+      return function* (input) {
+        if (predicate(input)) yield input;
+      };
+    },
+
+    reduce: function(reducer, initialValue) {
+      return function* (input) {
+        if (this.accumulator === undefined) {
+          this.accumulator = initialValue;
+        }
+        this.accumulator = reducer(this.accumulator, input);
+        yield this.accumulator;
+      };
+    },
+
+    flatMap: function(fn) {
+      return function* (input) {
+        yield* fn.call(this, input);
+      };
+    },
+
+    take: function(n) {
+      return function* (input) {
+        if (this.count === undefined) this.count = 0;
+        if (this.count < n) {
+          this.count++;
+          yield input;
+        }
+      };
+    },
+
+    skip: function(n) {
+      return function* (input) {
+        if (this.count === undefined) this.count = 0;
+        if (this.count >= n) {
+          yield input;
+        }
+        this.count++;
+      };
+    },
+
+    batch: function(size) {
+      return function* (input) {
+        this.buffer = this.buffer || [];
+        this.buffer.push(input);
+        if (this.buffer.length === size) {
+          yield this.buffer;
+          this.buffer = [];
+        }
+      };
+    },
+
+    debounce: function(ms) {
+      return function* (input) {
+        const now = Date.now();
+        if (!this.lastYield || (now - this.lastYield) >= ms) {
+          this.lastYield = now;
+          yield input;
+        }
+      };
+    },
+
+    throttle: function(ms) {
+      return function* (input) {
+        const now = Date.now();
+        if (!this.lastYield || (now - this.lastYield) >= ms) {
+          this.lastYield = now;
+          yield input;
+        }
+      };
+    },
+
+    distinct: function(equalityFn = (a, b) => a === b) {
+      return function* (input) {
+        this.seen = this.seen || [];
+        if (!this.seen.some(seenItem => equalityFn.call(this, seenItem, input))) {
+          this.seen.push(input);
+          yield input;
+        }
+      };
+    },
+
+    catchError: function(handler) {
+      return function* (input) {
+        try {
+          yield input;
+        } catch (error) {
+          handler(error);
+        }
+      };
+    },
+
+    tap: function(fn) {
+      return function* (input) {
+        fn.call(this, input);
+        yield input;
+      };
+    },
+
+    timeout: function(ms) {
+      return function* (input) {
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error(`Timeout after ${ms}ms`)), ms);
+        });
+        yield Promise.race([Promise.resolve(input), timeoutPromise]);
+      };
+    }
+  };
+
+  // StreamingChain class for chaining
+  class StreamingChain {
+    constructor(initialPipeline) {
+      this.pipeline = Array.isArray(initialPipeline) ? initialPipeline : [initialPipeline];
+    }
+
+    map(fn) {
+      this.pipeline.push(operators.map(fn));
+      return this;
+    }
+
+    filter(predicate) {
+      this.pipeline.push(operators.filter(predicate));
+      return this;
+    }
+
+    reduce(reducer, initialValue) {
+      this.pipeline.push(operators.reduce(reducer, initialValue));
+      return this;
+    }
+
+    flatMap(fn) {
+      this.pipeline.push(operators.flatMap(fn));
+      return this;
+    }
+
+    take(n) {
+      this.pipeline.push(operators.take(n));
+      return this;
+    }
+
+    skip(n) {
+      this.pipeline.push(operators.skip(n));
+      return this;
+    }
+
+    batch(size) {
+      this.pipeline.push(operators.batch(size));
+      return this;
+    }
+
+    debounce(ms) {
+      this.pipeline.push(operators.debounce(ms));
+      return this;
+    }
+
+    throttle(ms) {
+      this.pipeline.push(operators.throttle(ms));
+      return this;
+    }
+
+    distinct(equalityFn) {
+      this.pipeline.push(operators.distinct(equalityFn));
+      return this;
+    }
+
+    catchError(handler) {
+      this.pipeline.push(operators.catchError(handler));
+      return this;
+    }
+
+    tap(fn) {
+      this.pipeline.push(operators.tap(fn));
+      return this;
+    }
+
+    timeout(ms) {
+      this.pipeline.push(operators.timeout(ms));
+      return this;
+    }
+
+    [Symbol.asyncIterator]() {
+      return streaming(this.pipeline);
+    }
+  }
+
+  // Return a function that handles both array pipelines and chaining
+  return Object.assign(
+    function(initialPipeline) {
+      if (Array.isArray(initialPipeline)) {
+        return streaming(initialPipeline);
+      } else {
+        return new StreamingChain(initialPipeline);
+      }
+    },
+    operators
+  );
 };

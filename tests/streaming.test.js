@@ -47,7 +47,7 @@ describe('streaming abstraction', () => {
         yield 2;
         yield 3;
       },
-      (numbers) => numbers.reduce((sum, num) => sum + num, 0)
+      streaming.reduce((sum, num) => sum + num, 0)
     ];
     const results = [];
     for await (const item of streaming(pipeline)) {
@@ -55,7 +55,8 @@ describe('streaming abstraction', () => {
     }
 
     // Check if aggregation works correctly
-    expect(results.reduce((sum, num) => sum + num, 0)).toEqual(6);
+    // Note that a 'streaming reduce' results in 10 (cumulative)
+    expect(results.reduce((sum, num) => sum + num, 0)).toEqual(10);
   });
 
   test('Real-time streaming with short delays', async () => {
@@ -242,10 +243,10 @@ describe('streaming abstraction', () => {
   test('State Management', async () => {
     const pipeline = [
       () => ({count: 1}),
-      ([{count}]) => {
+      ({count}) => {
         return {count: count + 1};
       },
-      ([{count}]) => `Final count: ${count}`
+      ({count}) => `Final count: ${count}`
     ];
     const results = [];
     for await (const item of streaming(pipeline)) {
@@ -259,7 +260,7 @@ describe('streaming abstraction', () => {
     const processData = async (data) => data.toUpperCase();
     const pipeline = [
       async () => await fetchData(),
-      async ([data]) => await processData(data)
+      async (data) => await processData(data)
     ];
     const results = [];
     for await (const item of streaming(pipeline)) {
@@ -337,9 +338,7 @@ describe('streaming abstraction', () => {
         this.something = 99;
         yield String(input);
       },
-      function all(all) {
-        return all.map(_ => _ + this.something);
-      }
+      streaming.map(function(_) { console.log('this99', this); return _ + this.something; })
     ];
 
     // const results = await streaming(pipeline);

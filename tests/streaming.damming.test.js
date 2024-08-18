@@ -3,10 +3,49 @@ const streaming = require('../index.js')({
   bufferSize: 1000,
   logLevel: 'info'
 });
+function accumulator(count) {
+  return function* (item) {
+    this.buffer = this.buffer || [];
+    this.buffer.push(item);
+    
+    if (this.buffer.length === count) {
+      yield this.buffer;
+      this.buffer = [];
+    }
+  };
+}
 
-xdescribe('streaming abstraction', () => {
+// Skipping these while we're figuring out damming
+// Likely best to use operator methods
+describe('streaming abstraction - damming', () => {
 
-  test('Multiple damming approach with alternating generators and functions', async () => {
+  xtest('accumulator', async () => {
+    const pipeline = [
+      function* () {
+        yield 'apple';
+        yield 'banana';
+        yield 'cherry';
+        yield 'date';
+        yield 'elderberry';
+      },
+      accumulator(3),
+      function* (group) {
+        yield `Group: ${group.join(', ')}`;
+      }
+    ];
+
+    const results = [];
+    for await (const item of streaming(pipeline)) {
+      results.push(item);
+    }
+
+    expect(results).toEqual([
+      'The sum is: 110',
+      'Double the sum is: 220'
+    ]);
+  });
+
+  xtest('Multiple damming approach with alternating generators and functions', async () => {
     const pipeline = [
       // Generator: Produce initial stream of numbers
       function* numberStream() {
@@ -43,7 +82,6 @@ xdescribe('streaming abstraction', () => {
       results.push(item);
     }
 
-    // Assertions
     expect(results).toEqual([
       'The sum is: 110',
       'Double the sum is: 220'
