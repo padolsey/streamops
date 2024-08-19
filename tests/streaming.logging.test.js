@@ -1,4 +1,4 @@
-const createStreamer = require('../index');
+const createStreamer = require('../src/createStreamOps');
 const EventEmitter = require('events');
 
 describe('streaming abstraction error handling', () => {

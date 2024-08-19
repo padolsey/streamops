@@ -1,4 +1,4 @@
-const createStreamOps = require('../index');
+const createStreamOps = require('../src/createStreamOps');
 
 describe('StreamOps - Operator Functionalities', () => {
   let streamOps;

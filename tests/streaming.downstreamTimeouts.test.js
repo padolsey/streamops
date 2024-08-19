@@ -1,4 +1,4 @@
-const createStreamOps = require('../index.js');
+const createStreamOps = require('../src/createStreamOps.js');
 
 jest.setTimeout(10000); // Increase Jest's default timeout
 

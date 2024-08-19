@@ -1,4 +1,4 @@
-const streaming = require('../index.js')({
+const streaming = require('../src/createStreamOps.js')({
   timeout: 30000,
   bufferSize: 1000,
   logLevel: 'info'
@@ -157,6 +157,43 @@ describe('streaming abstraction', () => {
     }
     // Check handling of empty pipeline
     expect(results).toEqual([]);
+  });
+
+  test('basic sequence of yields', async () => {
+    const pipeline = [
+      function*() {
+        yield 1;
+        yield 2;
+      },
+      function*(n) {
+        yield n;
+        yield 3;
+        yield 4;
+      },
+      function*(n) {
+        yield n;
+        yield 5;
+        yield 6;
+      }
+    ];
+    const results = [];
+    for await (const item of streaming(pipeline)) {
+      results.push(item);
+    }
+
+    // Remember, it's a stream, so the end yields are the end-results
+    // And the amount of total yields will be
+    // {first step yields} * {middle step yields} * {end step yields}
+    // 2 * 3 * 3 = 18
+    expect(results).toEqual([
+      // end results:
+      1,        5, 6,
+      3,        5, 6,
+      4,        5, 6,
+      2,        5, 6,
+      3,        5, 6,
+      4,        5, 6
+    ]);
   });
 
   test('pipeline with error handling', async () => {

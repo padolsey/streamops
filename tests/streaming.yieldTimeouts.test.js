@@ -1,4 +1,4 @@
-const createStreamOps = require('../index.js');
+const createStreamOps = require('../src/createStreamOps.js');
 
 describe('YieldTimeout Tests', () => {
   let originalConsoleWarn;
