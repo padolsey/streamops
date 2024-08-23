@@ -51,6 +51,11 @@ class StreamingChain {
     return this;
   }
 
+  mergeAggregate(ms) {
+    this.pipeline.push(operators.mergeAggregate(ms));
+    return this;
+  }
+
   distinct(equalityFn) {
     this.pipeline.push(operators.distinct(equalityFn));
     return this;

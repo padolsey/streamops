@@ -113,5 +113,44 @@ module.exports = {
       });
       yield Promise.race([Promise.resolve(input), timeoutPromise]);
     };
-  }
+  },
+
+  mergeAggregate: function(options = {}) {
+    const {
+      removeDuplicates = true,
+      alwaysArray = true
+    } = options;
+    return function* (input) {
+      this.result = this.result || {};
+
+      if (input !== undefined) {
+        for (const [key, value] of Object.entries(input)) {
+          if (!(key in this.result)) {
+            this.result[key] = [];
+          }
+          if (Array.isArray(value)) {
+            this.result[key].push(...value);
+          } else {
+            this.result[key].push(value);
+          }
+        }
+      }
+
+      let output = {};
+      for (const [key, value] of Object.entries(this.result)) {
+        let processedValue = value;
+        if (removeDuplicates) {
+          processedValue = value.filter((v, i, self) =>
+            i === self.findIndex((t) => (
+              t && v && typeof t === 'object' && typeof v === 'object'
+                ? JSON.stringify(t) === JSON.stringify(v)
+                : t === v
+            ))
+          );
+        }
+        output[key] = alwaysArray ? processedValue : (processedValue.length === 1 ? processedValue[0] : processedValue);
+      }
+      yield output;
+    };
+  },
 };
