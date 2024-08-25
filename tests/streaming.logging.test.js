@@ -50,7 +50,7 @@ describe('streaming abstraction error handling', () => {
       for await (const item of streamingInstance(pipeline)) {
         emitter.emit('data', item);
       }
-    }).rejects.toThrow('Error processing step: Step 1');
+    }).rejects.toThrow('Test error');
 
     // expect(errorHandler).toHaveBeenCalledTimes(1);
     // expect(dataHandler).toHaveBeenCalledTimes(0);

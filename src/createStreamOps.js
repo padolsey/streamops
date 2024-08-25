@@ -4,18 +4,50 @@ const StreamOpsError = require('./StreamOpsError');
 const StreamingChain = require('./StreamingChain');
 const createLogger = require('./createLogger');
 
-function createStreamOps(options = {}) {
+class TimeoutCancelError extends Error {
+  constructor(stepIndex) {
+    super(`Step ${stepIndex} timed out, cancelling pipeline`);
+    this.name = 'TimeoutCancelError';
+    this.stepIndex = stepIndex;
+  }
+}
 
+function createStreamOps(options = {}) {
   const defaultOptions = {
     timeout: 100000,
     bufferSize: 1000,
-    logLevel: 'info',
+    logLevel: 'error',
     yieldTimeout: 20000,
-    downstreamTimeout: 30000
+    downstreamTimeout: 30000,
+    yieldTimeoutBehavior: 'warn'
   };
 
   const config = { ...defaultOptions, ...(options||{}) };
   const logger = createLogger(config);
+
+  function handleYieldTimeout(stepIndex, lastYieldTime) {
+    if (Date.now() - lastYieldTime <= config.yieldTimeout) {
+      return { shouldContinue: true };
+    }
+
+    switch (config.yieldTimeoutBehavior) {
+      case 'warn':
+        logger.warn(`Step ${stepIndex} has not yielded for ${config.yieldTimeout}ms`);
+        return { shouldContinue: true };
+      case 'yield-null':
+        logger.warn(`Step ${stepIndex} timed out, yielding null`);
+        return { shouldContinue: true, valueToYield: null };
+      case 'cancel':
+        logger.error(`Step ${stepIndex} timed out, cancelling pipeline`);
+        return { shouldContinue: false, cancel: true };
+      case 'block':
+        logger.warn(`Step ${stepIndex} timed out, blocking future yields`);
+        return { shouldContinue: false };
+      default:
+        logger.warn(`Unknown yieldTimeoutBehavior: ${config.yieldTimeoutBehavior}. Defaulting to 'warn'`);
+        return { shouldContinue: true };
+    }
+  }
 
   async function* streaming(pipeline) {
     if (pipeline instanceof StreamingChain) {
@@ -47,19 +79,30 @@ function createStreamOps(options = {}) {
     }
 
     async function* processStep(step, [input]) {
-      try {
-        let lastYieldTime = Date.now();
+      let lastYieldTime = Date.now();
+      let timeoutOccurred = false;
+      let shouldCancel = false;
+      let timeoutValue = undefined;
 
-        const checkYieldTimeout = setInterval(() => {
-          if (Date.now() - lastYieldTime > config.yieldTimeout) {
-            logger.warn(`Step ${stepIndex} has not yielded for ${config.yieldTimeout}ms`);
-          }
-        }, config.yieldTimeout);
+      const checkYieldTimeout = setInterval(() => {
+        const { shouldContinue, valueToYield, cancel } = handleYieldTimeout(stepIndex, lastYieldTime);
+        if (!shouldContinue) {
+          clearInterval(checkYieldTimeout);
+          timeoutOccurred = true;
+        }
+        if (cancel) {
+          shouldCancel = true;
+        }
+        if (valueToYield !== undefined) {
+          timeoutValue = valueToYield;
+        }
+      }, Math.min(config.yieldTimeout, 1000));
 
-        const onYield = () => {
-          lastYieldTime = Date.now();
-        };
+      const onYield = () => {
+        lastYieldTime = Date.now();
+      };
 
+      async function* wrappedStep() {
         if (Array.isArray(step)) {
           yield* processParallel(step, input);
         } else if (isGenerator(step)) {
@@ -75,10 +118,25 @@ function createStreamOps(options = {}) {
         } else {
           yield step;
         }
+      }
 
+      try {
+        for await (const item of wrappedStep()) {
+          if (shouldCancel) {
+            throw new TimeoutCancelError(stepIndex);
+          }
+          if (timeoutOccurred) {
+            break;
+          }
+          if (timeoutValue !== undefined) {
+            yield timeoutValue;
+            timeoutValue = undefined;
+          }
+          yield item;
+          onYield();
+        }
+      } finally {
         clearInterval(checkYieldTimeout);
-      } catch (error) {
-        throw new StreamOpsError('Error processing step', stepIndex, error);
       }
     }
 
@@ -152,7 +210,7 @@ function createStreamOps(options = {}) {
         }
 
         const step = pipeline[stepIndex];
-        logger.info(`Processing step ${stepIndex}`);
+        logger.dev(`Processing step ${stepIndex}`);
         validateStep(step);
 
         for await (const item of input) {
@@ -172,7 +230,7 @@ function createStreamOps(options = {}) {
       throw error;
     } finally {
       clearInterval(checkDownstreamTimeout);
-      logger.info('Streaming pipeline completed');
+      logger.dev('Streaming pipeline completed');
       emitter.emit('end');
     }
   }
@@ -190,6 +248,6 @@ function createStreamOps(options = {}) {
     },
     operators
   );
-};
+}
 
 module.exports = createStreamOps;
