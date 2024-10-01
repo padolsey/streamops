@@ -11,6 +11,16 @@ class StreamingChain {
     return this;
   }
 
+  bufferBetween(startToken, endToken) {
+    this.pipeline.push(operators.bufferBetween(startToken, endToken));
+    return this;
+  }
+
+  waitUntil(condition) {
+    this.pipeline.push(operators.waitUntil(condition));
+    return this;
+  }
+
   filter(predicate) {
     this.pipeline.push(operators.filter(predicate));
     return this;

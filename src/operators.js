@@ -1,4 +1,4 @@
-module.exports = {
+const operators =module.exports = {
 
   map: function(fn) {
     return function* (input) {
@@ -153,4 +153,81 @@ module.exports = {
       yield output;
     };
   },
+
+  waitUntil: function(conditions) {
+    if (typeof conditions !== 'function' && !Array.isArray(conditions) && (typeof conditions !== 'object' || conditions === null)) {
+      throw new Error('Invalid condition type');
+    }
+  
+    return function* (input) {
+      this.buffer = this.buffer || [];
+      this.buffer.push(input);
+  
+      const isReady = () => {
+        if (typeof conditions === 'function') {
+          return conditions(this.buffer);
+        }
+  
+        if (Array.isArray(conditions)) {
+          return conditions.every(field => this.buffer.some(item => field in item));
+        }
+  
+        if (typeof conditions === 'object') {
+          return Object.entries(conditions).every(([key, value]) => 
+            this.buffer.some(item => item[key] === value)
+          );
+        }
+  
+        return false;
+      };
+  
+      if (isReady()) {
+        const result = this.buffer;
+        this.buffer = [];
+        yield result;
+      }
+    };
+  },
+
+  bufferBetween: function(startToken, endToken, mapFn = null) {
+    return function* (input) {
+      this.buffer = this.buffer || '';
+      this.buffering = this.buffering || false;
+
+      let currentChunk = this.buffer + input;
+      let startIndex, endIndex;
+
+      while (currentChunk.length > 0) {
+        if (!this.buffering) {
+          startIndex = currentChunk.indexOf(startToken);
+          if (startIndex !== -1) {
+            if (startIndex > 0) {
+              yield currentChunk.slice(0, startIndex);
+            }
+            this.buffering = true;
+            currentChunk = currentChunk.slice(startIndex);
+          } else {
+            yield currentChunk;
+            currentChunk = '';
+          }
+        } else {
+          endIndex = currentChunk.indexOf(endToken, startToken.length);
+          if (endIndex !== -1) {
+            let content = currentChunk.slice(0, endIndex + endToken.length);
+            if (mapFn) {
+              yield mapFn(content);
+            } else {
+              yield content;
+            }
+            this.buffering = false;
+            currentChunk = currentChunk.slice(endIndex + endToken.length);
+          } else {
+            break;
+          }
+        }
+      }
+
+      this.buffer = currentChunk;
+    };
+  }
 };
