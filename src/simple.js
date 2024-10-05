@@ -1,6 +1,6 @@
 const createStreamOps = require('./createStreamOps');
 const StreamOpsError = require('./StreamOpsError');
-const operators = require('./operators');
+const {operators} = require('./operators');
 
 module.exports = async function*(pipelineCreator, streamOpsConfig) {
 

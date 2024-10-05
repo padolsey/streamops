@@ -1,4 +1,4 @@
-const operators = require('./operators');
+const {operators} = require('./operators');
 
 class StreamingChain {
   constructor(initialPipeline, _createStreamOps) {

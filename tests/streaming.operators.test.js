@@ -206,7 +206,7 @@ describe('StreamOps - Operator Functionalities', () => {
           yield 5;
         },
         streamOps.map(x => x * 2),
-        function (x) { console.log('55555', x); return x + 1; },
+        function (x) { return x + 1; },
         streamOps.filter(x => x % 2 === 1),
         streamOps.map(x => x * 10)
       ];

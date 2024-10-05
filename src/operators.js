@@ -1,4 +1,7 @@
-const operators =module.exports = {
+class Dam {}
+
+module.exports.Dam = Dam;
+const operators = module.exports.operators = {
 
   map: function(fn) {
     return function* (input) {
@@ -229,5 +232,8 @@ const operators =module.exports = {
 
       this.buffer = currentChunk;
     };
-  }
+  },
+
+  accrue: () => new Dam,
+  dam: () => new Dam
 };

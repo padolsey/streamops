@@ -375,7 +375,7 @@ describe('streaming abstraction', () => {
         this.something = 99;
         yield String(input);
       },
-      streaming.map(function(_) { console.log('this99', this); return _ + this.something; })
+      streaming.map(function(_) { return _ + this.something; })
     ];
 
     // const results = await streaming(pipeline);
@@ -560,7 +560,7 @@ describe('streaming abstraction', () => {
     // Check if items were received approximately 1 second apart
     for (let i = 1; i < timings.length; i++) {
       const timeDiff = timings[i] - timings[i-1];
-      console.log('timeDiff', timeDiff);
+      // console.log('timeDiff', timeDiff);
       expect(timeDiff).toBeGreaterThanOrEqual(900); // Allow for small timing inconsistencies
       expect(timeDiff).toBeLessThanOrEqual(1100);
     }

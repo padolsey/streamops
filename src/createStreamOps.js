@@ -1,5 +1,5 @@
 const EventEmitter = require('events');
-const operators = require('./operators');
+const {operators, Dam} = require('./operators');
 const StreamOpsError = require('./StreamOpsError');
 const StreamingChain = require('./StreamingChain');
 const createLogger = require('./createLogger');
@@ -49,6 +49,24 @@ function createStreamOps(options = {}) {
     }
   }
 
+  function splitArrayAt(arr, predicate) {
+    const result = arr.reduce((acc, item, index, array) => {
+      if (predicate(item, index, array)) {
+        if (index < array.length - 1) {
+          acc.push([]);
+        }
+      } else {
+        if (acc.length === 0) {
+          acc.push([]);
+        }
+        acc[acc.length - 1].push(item);
+      }
+      return acc;
+    }, []);
+  
+    return result;
+  }
+
   async function* streaming(pipeline) {
     if (pipeline instanceof StreamingChain) {
       pipeline = pipeline.pipeline;
@@ -56,6 +74,25 @@ function createStreamOps(options = {}) {
 
     const context = pipeline;
     const emitter = new EventEmitter();
+
+    const splits = splitArrayAt(pipeline, step => step instanceof Dam);
+    let last;
+
+    if (splits?.length > 1) {
+      for (const splitPipelinePart of splits) {
+        const activePipelinePartStream = streaming([
+          ...(last ? [function*() {yield last;}] : []),
+          ...splitPipelinePart
+        ]);
+        const results = [];
+        for await (const item of activePipelinePartStream) {
+          results.push(item);
+        }
+        last = results;
+      }
+      yield*last;
+      return;
+    }
 
     if (pipeline.length === 0) {
       logger.warn('Empty pipeline provided');
@@ -79,6 +116,7 @@ function createStreamOps(options = {}) {
     }
 
     async function* processStep(step, [input]) {
+
       let lastYieldTime = Date.now();
       let timeoutOccurred = false;
       let shouldCancel = false;
@@ -103,6 +141,7 @@ function createStreamOps(options = {}) {
       };
 
       async function* wrappedStep() {
+
         if (Array.isArray(step)) {
           yield* processParallel(step, input);
         } else if (isGenerator(step)) {
@@ -137,28 +176,6 @@ function createStreamOps(options = {}) {
         }
       } finally {
         clearInterval(checkYieldTimeout);
-      }
-    }
-
-    async function* withTimeout(promise, ms, message) {
-      const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error(message)), ms);
-      });
-
-      try {
-        const result = await Promise.race([promise, timeoutPromise]);
-        yield* (Array.isArray(result) ? result : [result]);
-      } catch (error) {
-        throw error;
-      }
-    }
-
-    async function* race(generatorPromise, timeoutPromise) {
-      try {
-        const generator = await Promise.race([generatorPromise, timeoutPromise]);
-        yield* generator;
-      } catch (error) {
-        throw error;
       }
     }
 
@@ -213,7 +230,11 @@ function createStreamOps(options = {}) {
         logger.dev(`Processing step ${stepIndex}`);
         validateStep(step);
 
+        const acc = [];
         for await (const item of input) {
+
+          if (acc.length) return acc;
+
           const processingGenerator = processStep(step, [item]);
           stepIndex++;
           for await (const result of processingGenerator) {
