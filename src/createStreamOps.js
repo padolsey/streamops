@@ -52,7 +52,7 @@ function createStreamOps(options = {}) {
   function splitArrayAt(arr, predicate) {
     const result = arr.reduce((acc, item, index, array) => {
       if (predicate(item, index, array)) {
-        if (index < array.length - 1) {
+        if (index <= array.length - 1) {
           acc.push([]);
         }
       } else {
@@ -79,6 +79,16 @@ function createStreamOps(options = {}) {
     let last;
 
     if (splits?.length > 1) {
+
+      // If the pipeline has been split such that the last item
+      // is an empty arr then we know its a dam:
+      if (
+        Array.isArray(splits[splits.length - 1]) &&
+        splits[splits.length - 1].length === 0
+      ) {
+        splits[splits.length - 1] = [function*(x) {yield* x}]
+      }
+
       for (const splitPipelinePart of splits) {
         const activePipelinePartStream = streaming([
           ...(last ? [function*() {yield last;}] : []),

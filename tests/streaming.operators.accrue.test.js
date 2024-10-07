@@ -52,6 +52,50 @@ describe('Accrue Operator', () => {
     expect(results).toEqual(['1, 2, 5, 8, 9']);
   });
 
+  test('Accruing as a last step', async () => {
+    const pipeline = [
+      function* () {
+        yield 5;
+        yield 2;
+        yield 8;
+        yield 1;
+        yield 9;
+      },
+      streamOps.accrue()
+    ];
+
+    const results = [];
+    for await (const item of streamOps(pipeline)) {
+      results.push(item);
+    }
+
+    expect(results).toEqual([5, 2, 8, 1, 9]);
+  });
+
+  test('Accruing nested arrays', async () => {
+    const pipeline = [
+      function* () {
+        yield 999;
+        yield [
+          1,2,3
+        ];
+        yield [
+          4,5,6
+        ];
+      },
+      streamOps.accrue()
+    ];
+
+    const results = [];
+    for await (const item of streamOps(pipeline)) {
+      results.push(item);
+    }
+
+    expect(results).toEqual([
+      999, [1,2,3], [4,5,6]
+    ]);
+  });
+
   test('Multiple accrue operations on book data', async () => {
     const pipeline = [
       function* () {
