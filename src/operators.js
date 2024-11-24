@@ -1,5 +1,4 @@
 class Dam {}
-
 module.exports.Dam = Dam;
 const operators = module.exports.operators = {
 
@@ -33,9 +32,11 @@ const operators = module.exports.operators = {
 
   take: function(n) {
     return function* (input) {
-      if (this.count === undefined) this.count = 0;
-      if (this.count < n) {
-        this.count++;
+      if (this.takeCount === undefined) {
+        this.takeCount = 0;
+      }
+      if (this.takeCount < n) {
+        this.takeCount++;
         yield input;
       }
     };
@@ -51,33 +52,24 @@ const operators = module.exports.operators = {
     };
   },
 
-  batch: function(size) {
+  batch: function(size, {yieldIncomplete = true} = {}) {
     return function* (input) {
-      this.buffer = this.buffer || [];
-      this.buffer.push(input);
-      if (this.buffer.length === size) {
-        yield this.buffer;
-        this.buffer = [];
+      if (!this.batchBuffer) {
+        this.batchBuffer = [];
       }
-    };
-  },
 
-  debounce: function(ms) {
-    return function* (input) {
-      const now = Date.now();
-      if (!this.lastYield || (now - this.lastYield) >= ms) {
-        this.lastYield = now;
-        yield input;
-      }
-    };
-  },
+      if (input !== undefined) {
+        this.batchBuffer.push(input);
 
-  throttle: function(ms) {
-    return function* (input) {
-      const now = Date.now();
-      if (!this.lastYield || (now - this.lastYield) >= ms) {
-        this.lastYield = now;
-        yield input;
+        if (this.batchBuffer.length >= size) {
+          const batch = this.batchBuffer.slice(0, size);
+          this.batchBuffer = this.batchBuffer.slice(size);
+          yield batch;
+        }
+      } else if (yieldIncomplete && this.batchBuffer.length > 0) {
+        // Yield remaining items when stream ends
+        yield this.batchBuffer;
+        this.batchBuffer = [];
       }
     };
   },
@@ -117,6 +109,7 @@ const operators = module.exports.operators = {
       yield Promise.race([Promise.resolve(input), timeoutPromise]);
     };
   },
+
 
   mergeAggregate: function(options = {}) {
     const {
@@ -161,16 +154,16 @@ const operators = module.exports.operators = {
     if (typeof conditions !== 'function' && !Array.isArray(conditions) && (typeof conditions !== 'object' || conditions === null)) {
       throw new Error('Invalid condition type');
     }
-  
+
     return function* (input) {
       this.buffer = this.buffer || [];
       this.buffer.push(input);
-  
+
       const isReady = () => {
         if (typeof conditions === 'function') {
           return conditions(this.buffer);
         }
-  
+
         if (Array.isArray(conditions)) {
           return conditions.every(field => this.buffer.some(item => field in item));
         }
@@ -180,10 +173,10 @@ const operators = module.exports.operators = {
             this.buffer.some(item => item[key] === value)
           );
         }
-  
+
         return false;
       };
-  
+
       if (isReady()) {
         const result = this.buffer;
         this.buffer = [];

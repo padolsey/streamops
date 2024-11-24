@@ -51,16 +51,6 @@ class StreamingChain {
     return this;
   }
 
-  debounce(ms) {
-    this.pipeline.push(operators.debounce(ms));
-    return this;
-  }
-
-  throttle(ms) {
-    this.pipeline.push(operators.throttle(ms));
-    return this;
-  }
-
   mergeAggregate(ms) {
     this.pipeline.push(operators.mergeAggregate(ms));
     return this;
