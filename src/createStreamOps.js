@@ -225,8 +225,8 @@ function createStreamOps(options = {}) {
     }
 
     function isGenerator(fn) {
-      return fn.constructor.name === 'GeneratorFunction' || 
-             fn.constructor.name === 'AsyncGeneratorFunction';
+      return fn?.constructor?.name === 'GeneratorFunction' || 
+             fn?.constructor?.name === 'AsyncGeneratorFunction';
     }
 
     try {
