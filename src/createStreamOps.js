@@ -5,8 +5,6 @@ const StreamOpsError = require('./StreamOpsError');
 const StreamingChain = require('./StreamingChain');
 const createLogger = require('./createLogger');
 
-console.log('END_SIGNAL', END_SIGNAL);
-
 class TimeoutCancelError extends Error {
   constructor(stepIndex) {
     super(`Step ${stepIndex} timed out, cancelling pipeline`);

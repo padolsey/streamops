@@ -1,6 +1,6 @@
 {
   "name": "streamops",
-  "version": "0.1.17",
+  "version": "0.1.18",
   "main": "./src/main.js",
   "scripts": {
     "test": "NODE_ENV=test jest"
