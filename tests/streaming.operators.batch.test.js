@@ -20,7 +20,7 @@ describe('Batch Operator', () => {
       results.push(item);
     }
 
-    expect(results).toEqual([[1,2], [3,4]]);
+    expect(results).toEqual([[1,2], [3,4], [5]]);
   });
 
   test('basic batching without incomplete batch yielding', async () => {
@@ -36,7 +36,7 @@ describe('Batch Operator', () => {
       results.push(item);
     }
 
-    expect(results).toEqual([[1,2], [3,4]]);  // [5] is dropped
+    expect(results).toEqual([[1,2], [3,4]]);
   });
 
   test('maintains batch state between yields', async () => {

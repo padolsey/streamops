@@ -1,5 +1,7 @@
 class Dam {}
 module.exports.Dam = Dam;
+const {END_SIGNAL, NEEDS_END_SIGNAL} = require('./CONSTANTS');
+
 const operators = module.exports.operators = {
 
   map: function(fn) {
@@ -53,25 +55,29 @@ const operators = module.exports.operators = {
   },
 
   batch: function(size, {yieldIncomplete = true} = {}) {
-    return function* (input) {
+    const batchGen = function* (input) {
       if (!this.batchBuffer) {
         this.batchBuffer = [];
       }
 
-      if (input !== undefined) {
-        this.batchBuffer.push(input);
-
-        if (this.batchBuffer.length >= size) {
-          const batch = this.batchBuffer.slice(0, size);
-          this.batchBuffer = this.batchBuffer.slice(size);
-          yield batch;
+      if (input === END_SIGNAL) {
+        if (yieldIncomplete && this.batchBuffer.length > 0) {
+          yield this.batchBuffer;
         }
-      } else if (yieldIncomplete && this.batchBuffer.length > 0) {
-        // Yield remaining items when stream ends
-        yield this.batchBuffer;
-        this.batchBuffer = [];
+        yield END_SIGNAL; // Propagate end signal
+        return;
+      }
+
+      if (input !== undefined) {  // Skip the initial undefined
+        this.batchBuffer.push(input);
+        if (this.batchBuffer.length >= size) {
+          yield this.batchBuffer.slice(0, size);
+          this.batchBuffer = this.batchBuffer.slice(size);
+        }
       }
     };
+    batchGen[NEEDS_END_SIGNAL] = true;
+    return batchGen;
   },
 
   distinct: function(equalityFn = (a, b) => a === b) {
@@ -228,5 +234,26 @@ const operators = module.exports.operators = {
   },
 
   accrue: () => new Dam,
-  dam: () => new Dam
+  dam: () => new Dam,
+
+  withEndSignal: function(fn) {
+    // If it's a generator function, wrap it
+    if (fn.constructor.name === 'GeneratorFunction') {
+      const wrapped = function* (input) {
+        yield* fn.call(this, input);
+      };
+      wrapped[NEEDS_END_SIGNAL] = true;
+      return wrapped;
+    }
+    
+    // If it's a regular function, make it a generator
+    const wrapped = function* (input) {
+      const result = fn.call(this, input);
+      if (input !== END_SIGNAL && result !== undefined) {
+        yield result;
+      }
+    };
+    wrapped[NEEDS_END_SIGNAL] = true;
+    return wrapped;
+  }
 };

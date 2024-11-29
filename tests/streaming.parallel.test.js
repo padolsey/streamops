@@ -1,6 +1,5 @@
 const streaming = require('../src/createStreamOps.js')({
   timeout: 30000,
-  bufferSize: 1000,
   logLevel: 'info'
 });
 

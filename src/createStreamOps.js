@@ -1,8 +1,11 @@
+const {END_SIGNAL, NEEDS_END_SIGNAL} = require('./CONSTANTS');
 const EventEmitter = require('events');
 const {operators, Dam} = require('./operators');
 const StreamOpsError = require('./StreamOpsError');
 const StreamingChain = require('./StreamingChain');
 const createLogger = require('./createLogger');
+
+console.log('END_SIGNAL', END_SIGNAL);
 
 class TimeoutCancelError extends Error {
   constructor(stepIndex) {
@@ -15,7 +18,6 @@ class TimeoutCancelError extends Error {
 function createStreamOps(options = {}) {
   const defaultOptions = {
     timeout: 100000,
-    bufferSize: 1000,
     logLevel: 'error',
     yieldTimeout: 20000,
     downstreamTimeout: 30000,
@@ -126,6 +128,11 @@ function createStreamOps(options = {}) {
     }
 
     async function* processStep(step, [input]) {
+      // Always pass END_SIGNAL to operators marked with NEEDS_END_SIGNAL
+      if (input === END_SIGNAL && !step[NEEDS_END_SIGNAL]) {
+        yield END_SIGNAL; // Propagate end signal
+        return;
+      }
 
       let lastYieldTime = Date.now();
       let timeoutOccurred = false;
@@ -231,8 +238,15 @@ function createStreamOps(options = {}) {
 
     try {
       async function* processPipeline(input, stepIndex = 0) {
+
+        // End of the pipeline!!!
         if (stepIndex >= pipeline.length) {
-          yield* input;
+          // Only yield actual values at the end of pipeline
+          for await (const item of input) {
+            if (item !== END_SIGNAL) {
+              yield item; // final "values" of the pipeline
+            }
+          }
           return;
         }
 
@@ -242,15 +256,14 @@ function createStreamOps(options = {}) {
 
         const acc = [];
         for await (const item of input) {
-
-          if (acc.length) return acc;
-
           const processingGenerator = processStep(step, [item]);
           stepIndex++;
           for await (const result of processingGenerator) {
             yield* processPipeline([result], stepIndex);
           }
         }
+        // Signal end of stream
+        yield* processPipeline([END_SIGNAL], stepIndex);
       }
 
       yield* processPipeline([undefined]);
@@ -282,3 +295,5 @@ function createStreamOps(options = {}) {
 }
 
 module.exports = createStreamOps;
+createStreamOps.END_SIGNAL = END_SIGNAL;
+createStreamOps.NEEDS_END_SIGNAL = NEEDS_END_SIGNAL;

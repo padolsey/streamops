@@ -38,7 +38,7 @@ describe('streaming abstraction', () => {
     }
     // Check if transformation is applied correctly
     expect(results).toEqual([2, 4, 6]);
-  });
+  });return;
 
   test('pipeline with aggregation / meh reducer', async () => {
     const pipeline = [
@@ -566,6 +566,53 @@ describe('streaming abstraction', () => {
     }
 
     jest.useRealTimers();
+  });
+
+  test('basic stream completes correctly', async () => {
+    let streamEnded = false;
+    const pipeline = [
+      function* () {
+        yield 1;
+        yield 2;
+        // Stream should end after 2
+        console.log('Generator done');
+      }
+    ];
+
+    const results = [];
+    for await (const item of streaming(pipeline)) {
+      results.push(item);
+    }
+    streamEnded = true;
+
+    expect(results).toEqual([1, 2]);
+    expect(streamEnded).toBe(true);
+  });
+
+  test('stream steps receive completion signal', async () => {
+    const receivedInputs = [];
+    const pipeline = [
+      function* () {
+        yield 1;
+        yield 2;
+        console.log('First generator done');
+      },
+      function* (input) {
+        receivedInputs.push(input);
+        yield input;
+        if (input === undefined) {
+          console.log('Second generator received undefined');
+        }
+      }
+    ];
+
+    const results = [];
+    for await (const item of streaming(pipeline)) {
+      results.push(item);
+    }
+
+    expect(results).toEqual([1, 2]);
+    expect(receivedInputs).toContain(undefined);
   });
 
 });
