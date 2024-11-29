@@ -23,6 +23,22 @@ describe('Batch Operator', () => {
     expect(results).toEqual([[1,2], [3,4], [5]]);
   });
 
+  test('basic batching with incomplete batch yielding', async () => {
+    const pipeline = [
+      function* () {
+        yield 1; yield 2; yield 3; yield 4; yield 5;
+      },
+      streamOps.batch(2, {yieldIncomplete: true})
+    ];
+
+    const results = [];
+    for await (const item of streamOps(pipeline)) {
+      results.push(item);
+    }
+
+    expect(results).toEqual([[1,2], [3,4], [5]]);
+  });
+
   test('basic batching without incomplete batch yielding', async () => {
     const pipeline = [
       function* () {

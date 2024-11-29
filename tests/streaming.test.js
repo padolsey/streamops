@@ -38,7 +38,7 @@ describe('streaming abstraction', () => {
     }
     // Check if transformation is applied correctly
     expect(results).toEqual([2, 4, 6]);
-  });return;
+  });
 
   test('pipeline with aggregation / meh reducer', async () => {
     const pipeline = [
@@ -595,15 +595,16 @@ describe('streaming abstraction', () => {
       function* () {
         yield 1;
         yield 2;
-        console.log('First generator done');
+        console.log('First generator done', streaming.END_SIGNAL);
       },
-      function* (input) {
+      streaming.withEndSignal(function* (input) {
         receivedInputs.push(input);
-        yield input;
-        if (input === undefined) {
-          console.log('Second generator received undefined');
+        if (input === streaming.END_SIGNAL) {
+          console.log('Second generator received END_SIGNAL');
+        } else {
+          yield input;
         }
-      }
+      })
     ];
 
     const results = [];
@@ -612,7 +613,7 @@ describe('streaming abstraction', () => {
     }
 
     expect(results).toEqual([1, 2]);
-    expect(receivedInputs).toContain(undefined);
+    expect(receivedInputs).toContain(streaming.END_SIGNAL);
   });
 
 });

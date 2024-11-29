@@ -288,7 +288,11 @@ function createStreamOps(options = {}) {
         });
       }
     },
-    operators
+    {
+      ...operators,
+      END_SIGNAL,
+      NEEDS_END_SIGNAL
+    }
   );
 }
 
