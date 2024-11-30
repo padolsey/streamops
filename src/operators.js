@@ -62,17 +62,19 @@ const operators = module.exports.operators = {
 
       if (input === END_SIGNAL) {
         if (yieldIncomplete && this.batchBuffer.length > 0) {
-          yield this.batchBuffer;
+          const finalBatch = this.batchBuffer.slice();
+          this.batchBuffer = []; // Clear the buffer
+          yield finalBatch;
         }
-        yield END_SIGNAL; // Propagate end signal
-        return;
+        return; // Don't propagate END_SIGNAL, just return
       }
 
       if (input !== undefined) {  // Skip the initial undefined
         this.batchBuffer.push(input);
         if (this.batchBuffer.length >= size) {
-          yield this.batchBuffer.slice(0, size);
+          const batch = this.batchBuffer.slice(0, size);
           this.batchBuffer = this.batchBuffer.slice(size);
+          yield batch;
         }
       }
     };
